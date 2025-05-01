@@ -128,6 +128,10 @@ const authCtrl = {
             if (!comparePassword) {
                 return res.status(400).send({ message: "Email or password is incorrect" });
             }
+            
+            if (!user.isVerified) {
+                return res.status(400).send({ message: "This user is not verified" });
+            }
             delete user._doc.password;
 
             const token = JWT.sign(user._doc, process.env.JWT_SECRET_KEY);

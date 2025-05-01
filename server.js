@@ -4,6 +4,7 @@ const dotenv = require("dotenv");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const socketIo = require("socket.io")
+const nodemailer = require("nodemailer")
 
 const http = require("http");
 dotenv.config()
@@ -13,6 +14,7 @@ const authRouter = require("./src/router/authRouter")
 const userRouter = require("./src/router/userRouter")
 const chatRouter = require("./src/router/chatRouter")
 const messageRouter = require("./src/router/messageRouter")
+const User = require("./src/model/userModel")
 
 const app = express();
 const PORT = process.env.PORT || 4001;
@@ -27,7 +29,7 @@ const io = socketIo(server, {
 //middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(fileUpload({useTempFiles: true}))
+app.use(fileUpload({ useTempFiles: true }))
 app.use(cors())
 
 //use routes
@@ -48,10 +50,27 @@ io.on("connection", (sokcet) => {
         io.emit("get-users", activeUsers)
     })
 
-    sokcet.on("disconnect", () => {
-        activeUsers = activeUsers.filter(user => user.sokcetId !== sokcet.id)
-        io.emit("get-users", activeUsers)
-    })
+    sokcet.on("disconnect", async () => {
+        const disconnectedUser = activeUsers.find(user => user.sokcetId === sokcet.id);
+
+        if (disconnectedUser) {
+            activeUsers = activeUsers.filter(user => user.sokcetId !== sokcet.id);
+
+            try {
+                const exitedTime = new Date().toISOString();
+                await User.findByIdAndUpdate(disconnectedUser.userId, { exitedTime });
+
+                io.emit("user-exited", {
+                    userId: disconnectedUser.userId,
+                    exitedTime
+                });
+            } catch (error) {
+                console.error(error)
+            }
+        }
+
+        io.emit("get-users", activeUsers);
+    });
 
     sokcet.on("send-message", (data) => {
         const { id } = data
@@ -68,6 +87,15 @@ io.on("connection", (sokcet) => {
 
         if (user) {
             io.to(user.sokcetId).emit("return-typing", data)
+        }
+    })
+
+    sokcet.on("delete-user", (data) => {
+        const { _id } = data
+
+        const user = activeUsers.find(user => user.userId === _id)
+        if (user) {
+            io.to(user.sokcetId).emit("return-deluser", data)
         }
     })
 });
